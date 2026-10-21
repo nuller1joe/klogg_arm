@@ -17,6 +17,13 @@
  * along with klogg.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef KLOGG_WRAPPEDSTRING_H
+#define KLOGG_WRAPPEDSTRING_H
+
+#include <algorithm>
+#include <iterator>
+#include <limits>
+#include <memory>
 #include <QString>
 #include <cstddef>
 #include <qchar.h>
@@ -36,37 +43,52 @@ public:
         return QStringView( lineText ).mid( firstCol.get(), length.get() );
     }
 
-    explicit WrappedString( QString longLine, LineLength visibleColumns )
+    explicit WrappedString( QString longLine, LineLength visibleColumns,
+                            size_t maxWrappedLines = std::numeric_limits<size_t>::max() )
     {
-        unwrappedLine_ = longLine;
-        if ( longLine.isEmpty() ) {
-            wrappedLines_.push_back( WrappedStringPart{} );
+        unwrappedLine_ = std::move( longLine );
+        // Even a collapsed viewport must consume at least one character per row.
+        const auto width = std::max( visibleColumns.get(), LineLength::UnderlyingType{ 1 } );
+        maxWrappedLines = std::max( maxWrappedLines, size_t{ 1 } );
+        if ( unwrappedLine_.isEmpty() ) {
+            wrappedLines_->push_back( WrappedStringPart{} );
         }
         else {
-            WrappedStringPart lineToWrap( longLine );
-            while ( lineToWrap.size() > visibleColumns.get() ) {
-                WrappedStringPart stringToWrap = lineToWrap.left( visibleColumns.get() );
-                auto lastSpaceIt = std::find_if( stringToWrap.rbegin(), stringToWrap.rend(),
-                                                 []( QChar c ) { return c.isSpace(); } );
-                if ( lastSpaceIt == stringToWrap.rend() ) {
-                    wrappedLines_.push_back( lineToWrap.left( visibleColumns.get() ) );
-                    lineToWrap = lineToWrap.mid( visibleColumns.get() );
-                }
-                else {
-                    auto spacePos = std::distance( stringToWrap.begin(), lastSpaceIt.base() );
-                    wrappedLines_.push_back( lineToWrap.left( spacePos ) );
-                    lineToWrap = lineToWrap.mid( spacePos );
-                }
+            WrappedStringPart lineToWrap( unwrappedLine_ );
+            while ( lineToWrap.size() > width && wrappedLines_->size() < maxWrappedLines ) {
+                const auto rowLength = nextRowLength( lineToWrap, width );
+                wrappedLines_->push_back( lineToWrap.left( rowLength ) );
+                lineToWrap = lineToWrap.mid( rowLength );
             }
-            if ( lineToWrap.size() > 0 ) {
-                wrappedLines_.push_back( lineToWrap );
+            if ( lineToWrap.size() > 0 && wrappedLines_->size() < maxWrappedLines ) {
+                wrappedLines_->push_back( lineToWrap );
             }
         }
     }
 
     size_t wrappedLinesCount() const
     {
-        return wrappedLines_.size();
+        return wrappedLines_->size();
+    }
+
+    // Scrollbar calculations only need a count, not a stored view for every row.
+    static size_t countWrappedLines( const QString& text, LineLength visibleColumns )
+    {
+        auto remaining = QStringView{ text };
+        const auto width = std::max( visibleColumns.get(), LineLength::UnderlyingType{ 1 } );
+        size_t count = 1;
+        while ( remaining.size() > width ) {
+            remaining = remaining.mid( nextRowLength( remaining, width ) );
+            ++count;
+        }
+        return count;
+    }
+
+    LineLength visibleLength() const
+    {
+        const auto& last = wrappedLines_->back();
+        return last.isEmpty() ? 0_length
+                             : LineLength{ last.data() + last.size() - unwrappedLine_.constData() };
     }
 
     klogg::vector<WrappedStringPart> mid( LineColumn start, LineLength length ) const
@@ -76,8 +98,11 @@ public:
         };
 
         klogg::vector<WrappedStringPart> resultChunks;
-        if ( wrappedLines_.size() == 1 ) {
-            auto& wrappedLine = wrappedLines_.front();
+        if ( start < 0_lcol || length <= 0_length || start.get() >= visibleLength().get() ) {
+            return resultChunks;
+        }
+        if ( wrappedLines_->size() == 1 ) {
+            auto& wrappedLine = wrappedLines_->front();
             auto len = std::min( length.get(), getLength( wrappedLine ) - start.get() );
             resultChunks.push_back( wrappedLine.mid( start.get(), ( len > 0 ? len : 0 ) ) );
             return resultChunks;
@@ -85,29 +110,29 @@ public:
 
         size_t wrappedLineIndex = 0;
         auto positionInWrappedLine = start.get();
-        while ( positionInWrappedLine > getLength( wrappedLines_[ wrappedLineIndex ] ) ) {
-            positionInWrappedLine -= getLength( wrappedLines_[ wrappedLineIndex ] );
+        while ( positionInWrappedLine > getLength( (*wrappedLines_)[ wrappedLineIndex ] ) ) {
+            positionInWrappedLine -= getLength( (*wrappedLines_)[ wrappedLineIndex ] );
             wrappedLineIndex++;
-            if ( wrappedLineIndex >= wrappedLines_.size() ) {
+            if ( wrappedLineIndex >= wrappedLines_->size() ) {
                 return resultChunks;
             }
         }
 
         auto chunkLength = length.get();
         while ( positionInWrappedLine + chunkLength
-                > getLength( wrappedLines_[ wrappedLineIndex ] ) ) {
+                > getLength( (*wrappedLines_)[ wrappedLineIndex ] ) ) {
             resultChunks.push_back(
-                wrappedLines_[ wrappedLineIndex ].mid( positionInWrappedLine ) );
+                (*wrappedLines_)[ wrappedLineIndex ].mid( positionInWrappedLine ) );
             wrappedLineIndex++;
             positionInWrappedLine = 0;
             chunkLength -= getLength( resultChunks.back() );
-            if ( wrappedLineIndex >= wrappedLines_.size() ) {
+            if ( wrappedLineIndex >= wrappedLines_->size() ) {
                 return resultChunks;
             }
         }
 
         if ( chunkLength > 0 ) {
-            auto& wrappedLine = wrappedLines_[ wrappedLineIndex ];
+            auto& wrappedLine = (*wrappedLines_)[ wrappedLineIndex ];
             auto len = std::min( chunkLength, getLength( wrappedLine ) - positionInWrappedLine );
             resultChunks.push_back(
                 wrappedLine.mid( positionInWrappedLine, ( len > 0 ? len : 0 ) ) );
@@ -126,10 +151,23 @@ public:
     }
 
     WrappedStringPart wrappedLine(size_t index) const {
-        return wrappedLines_[index];
+        return (*wrappedLines_)[index];
     }
 
 private:
-    klogg::vector<WrappedStringPart> wrappedLines_;
+    static LineLength::UnderlyingType nextRowLength( WrappedStringPart text,
+                                                     LineLength::UnderlyingType width )
+    {
+        const auto row = text.left( width );
+        const auto space = std::find_if( row.rbegin(), row.rend(),
+                                        []( QChar c ) { return c.isSpace(); } );
+        return space == row.rend() ? width : std::distance( row.begin(), space.base() );
+    }
+
+    // A row in the hit-test cache copies this object. Share the layout rather
+    // than copying all wrapped rows for each cached row (quadratic memory).
+    std::shared_ptr<klogg::vector<WrappedStringPart>> wrappedLines_
+        = std::make_shared<klogg::vector<WrappedStringPart>>();
     QString unwrappedLine_;
 };
+#endif // KLOGG_WRAPPEDSTRING_H

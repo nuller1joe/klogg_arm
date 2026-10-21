@@ -20,7 +20,7 @@
 #ifndef KLOGG_COLORLABELSMANAGER_H
 #define KLOGG_COLORLABELSMANAGER_H
 
-#include "abstractlogview.h"
+#include <QStringList>
 #include <optional>
 #include <qobject.h>
 #include <qobjectdefs.h>
@@ -28,10 +28,14 @@
 
 class ColorLabelsManager {
   public:
-    using QuickHighlightersCollection = std::vector<AbstractLogView::QuickHighlighters>;
+    using QuickHighlightersCollection = std::vector<QStringList>;
+
+    // Labels match within individual lines, never across line boundaries.
+    static QStringList selectionTexts( const QString& text );
 
     QuickHighlightersCollection colorLabels() const;
 
+    // An index equal to colorLabels().size() removes labels from the selection.
     QuickHighlightersCollection setColorLabel( size_t label, const QString& text );
     QuickHighlightersCollection setNextColorLabel( const QString& text );
 

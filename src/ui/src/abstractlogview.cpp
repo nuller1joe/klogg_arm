@@ -79,6 +79,7 @@
 #include <tbb/flow_graph.h>
 
 #include "abstractlogview.h"
+#include "colorlabelsmanager.h"
 #include "containers.h"
 #include "highlightedmatch.h"
 #include "linetypes.h"
@@ -572,12 +573,17 @@ void AbstractLogView::mousePressEvent( QMouseEvent* mouseEvent )
         connect( colorLablesActionGroup, &QActionGroup::triggered, this,
                  &AbstractLogView::setColorLabel );
         colorLabelsMenu_->clear();
-        colorLabelsMenu_->setEnabled( selection_.isPortion() || selection_.isSingleLine() );
+        colorLabelsMenu_->setEnabled( !lines.empty() );
         if ( colorLabelsMenu_->isEnabled() ) {
-            auto selectedText = selection_.getSelectedText( logData_ );
+            const auto selectedTexts = ColorLabelsManager::selectionTexts(
+                selection_.getSelectedText( logData_ ) );
             std::optional<size_t> currentLabel;
             for ( auto i = 0u; i < quickHighlighters_.size(); ++i ) {
-                if ( quickHighlighters_[ i ].contains( selectedText ) ) {
+                if ( !selectedTexts.isEmpty()
+                     && std::all_of( selectedTexts.cbegin(), selectedTexts.cend(),
+                         [ & ]( const QString& text ) {
+                             return quickHighlighters_[ i ].contains( text );
+                         } ) ) {
                     currentLabel = i;
                     break;
                 }
@@ -587,9 +593,8 @@ void AbstractLogView::mousePressEvent( QMouseEvent* mouseEvent )
             noneAction->setActionGroup( colorLablesActionGroup );
             noneAction->setCheckable( true );
             noneAction->setChecked( !currentLabel.has_value() );
-            if ( currentLabel ) {
-                noneAction->setData( static_cast<unsigned>( *currentLabel ) );
-            }
+            // The index past the last label removes labels from this selection.
+            noneAction->setData( static_cast<unsigned>( quickHighlighters_.size() ) );
 
             const auto& quickHighlightersConfiguration
                 = HighlighterSetCollection::get().quickHighlighters();
@@ -1438,8 +1443,7 @@ void AbstractLogView::saveLinesToFile( LineNumber begin, LineNumber end )
     }
 
     QSaveFile saveFile{ filename };
-    saveFile.open( QIODevice::WriteOnly | QIODevice::Truncate );
-    if ( !saveFile.isOpen() ) {
+    if ( !saveFile.open( QIODevice::WriteOnly | QIODevice::Truncate ) ) {
         LOG_ERROR << "Failed to open file to save";
         return;
     }
@@ -1751,7 +1755,8 @@ LinesCount AbstractLogView::getNbVisibleLines() const
 LineLength AbstractLogView::getNbVisibleCols() const
 {
     const auto scrollBarWidth = verticalScrollBar()->isVisible() ? verticalScrollBar()->width() : 0;
-    return LineLength{ ( viewport()->width() - leftMarginPx_ - scrollBarWidth ) / charWidth_ + 1 };
+    return LineLength{ std::max( 1, ( viewport()->width() - leftMarginPx_ - scrollBarWidth )
+                                      / charWidth_ + 1 ) };
 }
 
 // Converts the mouse x, y coordinates to the line number in the file
@@ -2149,9 +2154,9 @@ LinesCount AbstractLogView::getNbBottomWrappedVisibleLines() const
         LineNumber unwrappedLineNumber{ logData_->getNbLine().get() - 1 };
         while ( unwrappedLines < totalLines && unwrappedLines < visibleLines ) {
             QString expandedLine = logData_->getExpandedLineString( unwrappedLineNumber );
-            WrappedString wrapped{ expandedLine, visibleColumns };
             wrappedVisibleLines += LinesCount(
-                type_safe::narrow_cast<LinesCount::UnderlyingType>( wrapped.wrappedLinesCount() ) );
+                type_safe::narrow_cast<LinesCount::UnderlyingType>(
+                    WrappedString::countWrappedLines( expandedLine, visibleColumns ) ) );
             unwrappedLines++;
             unwrappedLineNumber--;
         }
@@ -2443,7 +2448,11 @@ void AbstractLogView::drawTextArea( QPaintDevice* paintDevice )
 
         const auto wrappedLineLength
             = useTextWrap_ ? nbVisibleCols : LineLength{ klogg::isize( expandedLine ) + 1 };
-        const WrappedString wrappedLineView{ expandedLine, wrappedLineLength };
+        // Only lay out rows that can be painted. A single physical line can be
+        // gigabytes long; offscreen rows do not belong in the drawing/hit-test cache.
+        const auto visibleRows = static_cast<size_t>(
+            std::max( 1, ( paintDeviceHeight - yPos + fontHeight - 1 ) / fontHeight ) );
+        const WrappedString wrappedLineView{ expandedLine, wrappedLineLength, visibleRows };
         const auto finalLineHeight
             = fontHeight * static_cast<int>( wrappedLineView.wrappedLinesCount() );
         // LOG_INFO << "Draw line " << lineNumber << ": " << expandedLine;
@@ -2455,7 +2464,8 @@ void AbstractLogView::drawTextArea( QPaintDevice* paintDevice )
         const auto firstVisibleColumn = std::clamp( useTextWrap_ ? 0_lcol : firstCol_, 0_lcol,
                                                     LineColumn{ klogg::isize( expandedLine ) } );
         const auto lastVisibleColumn
-            = useTextWrap_ ? LineColumn{ klogg::isize( expandedLine ) } : firstCol_ + nbVisibleCols;
+            = useTextWrap_ ? LineColumn{ wrappedLineView.visibleLength().get() }
+                           : firstCol_ + nbVisibleCols;
         allHighlights.clamp( firstVisibleColumn, lastVisibleColumn );
 
         if ( !allHighlights.empty() && !expandedLine.isEmpty() ) {
@@ -2496,7 +2506,7 @@ void AbstractLogView::drawTextArea( QPaintDevice* paintDevice )
         }
         else {
             if ( useTextWrap_ ) {
-                lineDrawer.addChunk( 0_lcol, LineColumn{ expandedLine.size() }, foreColor,
+                lineDrawer.addChunk( 0_lcol, lastVisibleColumn, foreColor,
                                      backColor );
             }
             else {

@@ -1,0 +1,36 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "macos-arm64",
+      "displayName": "Apple Silicon Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-arm64",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5",
+        "CPM_SOURCE_CACHE": "${sourceDir}/build-arm64/cpm-cache",
+        "BOOST_ROOT": "/opt/homebrew/opt/boost",
+        "KLOGG_GENERIC_CPU": "ON",
+        "KLOGG_USE_HYPERSCAN": "OFF",
+        "KLOGG_USE_VECTORSCAN": "ON",
+        "KLOGG_USE_SENTRY": "OFF",
+        "KLOGG_USE_LTO": "OFF",
+        "KLOGG_BUILD_TESTS": "ON",
+        "SIMDUTF_TESTS": "OFF",
+        "SIMDUTF_TOOLS": "OFF",
+        "ENABLE_ROARING_TESTS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "macos-arm64", "configurePreset": "macos-arm64", "targets": ["klogg", "klogg_tests", "klogg_itests"], "jobs": 4 }
+  ],
+  "testPresets": [
+    { "name": "macos-arm64", "configurePreset": "macos-arm64", "output": { "outputOnFailure": true } }
+  ]
+}

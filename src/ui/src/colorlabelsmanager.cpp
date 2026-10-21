@@ -22,6 +22,19 @@
 #include <algorithm>
 #include <vector>
 
+QStringList ColorLabelsManager::selectionTexts( const QString& text )
+{
+    auto texts = text.split( QChar::LineFeed );
+    for ( auto& line : texts ) {
+        if ( line.endsWith( QChar::CarriageReturn ) ) {
+            line.chop( 1 );
+        }
+    }
+    texts.removeAll( QString{} );
+    texts.removeDuplicates();
+    return texts;
+}
+
 ColorLabelsManager::QuickHighlightersCollection ColorLabelsManager::colorLabels() const
 {
     return quickHighlighters_;
@@ -79,17 +92,32 @@ ColorLabelsManager::setNextColorLabel( const QString& text )
 ColorLabelsManager::QuickHighlightersCollection
 ColorLabelsManager::updateColorLabel( size_t label, const QString& text, bool replaceCurrent )
 {
-    auto wasHighlightedAnyLabel = false;
-    auto wasHighlightedOtherLabel = false;
-
-    for ( auto i = 0u; i < quickHighlighters_.size(); ++i ) {
-        const auto wasHighlighted = quickHighlighters_[ i ].removeAll( text ) != 0;
-        wasHighlightedAnyLabel |= wasHighlighted;
-        wasHighlightedOtherLabel |= ( wasHighlighted && i != label );
+    if ( label > quickHighlighters_.size() ) {
+        return quickHighlighters_;
     }
 
-    if ( !( wasHighlightedAnyLabel ) || ( wasHighlightedOtherLabel && replaceCurrent ) ) {
-        quickHighlighters_[ label ].append( text );
+    const auto texts = selectionTexts( text );
+    // Apply one consistent action to the whole selection. Choosing an existing
+    // label toggles it off only when every selected text already has that label.
+    const auto removeLabel = std::all_of( texts.cbegin(), texts.cend(),
+        [ & ]( const QString& line ) {
+            if ( label == quickHighlighters_.size() ) {
+                return true;
+            }
+            if ( replaceCurrent ) {
+                return quickHighlighters_[ label ].contains( line );
+            }
+            return std::any_of( quickHighlighters_.cbegin(), quickHighlighters_.cend(),
+                [ & ]( const auto& highlights ) { return highlights.contains( line ); } );
+        } );
+
+    for ( const auto& line : texts ) {
+        for ( auto& highlights : quickHighlighters_ ) {
+            highlights.removeAll( line );
+        }
+        if ( !removeLabel ) {
+            quickHighlighters_[ label ].append( line );
+        }
     }
 
     return quickHighlighters_;

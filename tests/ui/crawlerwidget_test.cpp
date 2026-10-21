@@ -152,6 +152,33 @@ struct CrawlerWidget::access_by<CrawlerWidgetPrivate> {
 
 using CrawlerWidgetVisitor = CrawlerWidget::access_by<CrawlerWidgetPrivate>;
 
+TEST_CASE( "Wrapping a very long physical line renders without runaway memory", "[ui][wrapping]" )
+{
+    QTemporaryFile file{ "crawler_long_line_XXXXXX" };
+    REQUIRE( file.open() );
+    const QByteArray line( 4 * 1024 * 1024, 'x' );
+    REQUIRE( file.write( line ) == line.size() );
+    REQUIRE( file.flush() );
+
+    Session session;
+    CrawlerWidgetVisitor visitor;
+    visitor.crawler.reset( static_cast<CrawlerWidget*>(
+        session.open( file.fileName(), [] { return new CrawlerWidget(); } ) ) );
+    REQUIRE( visitor.crawler );
+    REQUIRE( waitUiState( [ & ] { return visitor.isLoadingFinished(); } ) );
+    REQUIRE( visitor.getLogNbLines().get() == 1 );
+    visitor.crawler->resize( 800, 600 );
+    visitor.crawler->textWrapSet( true );
+    visitor.render();
+    // Repeat and resize to exercise cache invalidation and narrow viewports.
+    visitor.crawler->resize( 100, 200 );
+    visitor.render();
+    visitor.crawler->resize( 900, 600 );
+    visitor.render();
+    visitor.selectAllInMainView();
+    REQUIRE( visitor.mainViewSelectedText() == QString::fromLatin1( line ) );
+}
+
 SCENARIO( "Crawler widget search", "[ui]" )
 {
     QTemporaryFile file{ "crawler_test_XXXXXX" };

@@ -38,7 +38,7 @@
 #include <QNetworkProxyFactory>
 #include <QUuid>
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 #include <QFileOpenEvent>
 #endif
 
@@ -214,7 +214,7 @@ class KloggApp : public QApplication {
         versionChecker_.startCheck();
     }
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
     bool event( QEvent* event ) override
     {
         if ( event->type() == QEvent::FileOpen ) {

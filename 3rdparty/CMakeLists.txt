@@ -118,6 +118,8 @@ cpmaddpackage(
   variar/klogg_karchive
   GIT_TAG
   f546bf6ae66a8d34b43da5a41afcfbf4e1a47906
+  PATCH_COMMAND
+  ${CMAKE_COMMAND} -DSOURCE_DIR=<SOURCE_DIR> -P ${CMAKE_CURRENT_SOURCE_DIR}/patches/karchive-qt6.cmake
   EXCLUDE_FROM_ALL
   YES
 )
@@ -414,5 +416,4 @@ foreach(target ${klogg_cpm_targets})
     set_property(TARGET ${target} PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES ${${target}_include_dirs})
   endif()
 endforeach()
-
 

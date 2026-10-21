@@ -51,6 +51,43 @@ If a library can't be found, the one provided by CPM will be used.
 
 ## Building
 
+### Building on Apple Silicon
+
+Use an ARM64 terminal and ARM64 Homebrew in `/opt/homebrew`, with Xcode's
+command-line tools installed. The preset requires CMake 3.21 or newer.
+
+```sh
+brew install cmake ninja qtbase qt5compat qttools qtsvg boost ragel pkgconf
+cmake --preset macos-arm64
+cmake --build --preset macos-arm64
+ctest --preset macos-arm64
+open build-arm64/output/klogg.app
+```
+
+Configuration downloads the pinned source dependencies and therefore needs
+internet access on the first run. The preset builds a native ARM64 Release app
+with Vectorscan search support and the test executables. Generic ARM CPU flags
+avoid optimizing the app exclusively for the Mac on which it was compiled.
+The preset also enables the compatibility policy needed by older dependencies
+when using CMake 4.
+
+The app initially links to Homebrew's Qt frameworks. To bundle those frameworks
+for a local standalone copy, run:
+
+```sh
+python3 packaging/osx/deploy-local.py build-arm64/output/klogg.app
+file build-arm64/output/klogg.app/Contents/MacOS/klogg
+```
+
+The deployment helper includes both the native Cocoa platform plugin and the
+offscreen plugin used by the smoke test, applies a local ad-hoc signature, and
+checks startup with each plugin. Keep the entire `.app` bundle together when
+moving it. Rerun this helper after rebuilding the app.
+
+Signing and notarization for distribution are separate from this local build.
+The preset uses Homebrew's current SDK/dependency deployment requirements; it
+does not guarantee compatibility with older macOS releases.
+
 ### Configuration options
 
 By default Klogg is built without support for reporting crash dumps. This can be enabled via cmake option `-DKLOGG_USE_SENTRY=ON`.
@@ -149,7 +186,10 @@ Put libcrypto-1_1 and libssl-1_1 for desired architecture near klogg binaries.
 
 ### Building on Mac OS
 
-Klogg requires macOS High Sierra (10.13) or higher.
+For Apple Silicon and Qt 6, use [Building on Apple Silicon](#building-on-apple-silicon).
+The instructions below describe the older Intel / Qt 5 setup. Its original
+minimum macOS version was High Sierra (10.13); current dependencies may require
+a newer macOS version.
 
 Install [Homebrew](https://brew.sh/) using terminal:
 

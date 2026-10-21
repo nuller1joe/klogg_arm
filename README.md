@@ -187,9 +187,31 @@ As indicated by this link from the official appimage documentation: https://docs
 
 ## Building
 
-Please review
-[BUILD.md](BUILD.md)
-for how to setup Klogg on your local machine for development and testing purposes.
+Run build commands from the project root: the folder containing this README and
+`CMakeLists.txt`. Choose the instructions for your platform:
+
+| Platform | Build instructions |
+| --- | --- |
+| macOS on Apple Silicon (ARM64, Qt 6) | [Apple Silicon setup, build, tests, and packaging](BUILD.md#building-on-apple-silicon) |
+| Linux | [Linux build](BUILD.md#building-on-linux) |
+| Windows | [Windows build](BUILD.md#building-on-windows) |
+| macOS with the older Intel / Qt 5 setup | [Legacy macOS build](BUILD.md#building-on-mac-os) |
+
+For an Apple Silicon rebuild after installing the prerequisites in
+[BUILD.md](BUILD.md#building-on-apple-silicon), quit Klogg and run:
+
+```sh
+cd /path/to/klogg-master
+cmake --preset macos-arm64
+cmake --build --preset macos-arm64
+ctest --preset macos-arm64
+python3 packaging/osx/deploy-local.py build-arm64/output/klogg.app
+open build-arm64/output/klogg.app
+```
+
+The finished app is `build-arm64/output/klogg.app`. The Apple Silicon preset has
+been verified locally; the other platform instructions describe the existing
+build workflows and have not been revalidated as part of these changes.
 
 ## How to Get Help
 
